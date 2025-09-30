@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { type Shape, type Layer, type GlobalEffects, type Scene, type Point, type VisualType, type ShapeType, type MediaItem, blendModes, type LiveStream } from './types';
+import { type Shape, type Layer, type GlobalEffects, type Scene, type Point, type VisualType, type ShapeType, type MediaItem, blendModes, type LiveStream, AudioLevels } from './types';
 import Header from './components/Header';
 import Canvas, { VisualThumbnail } from './components/Canvas';
 import Panel from './components/Panel';
@@ -105,17 +105,15 @@ const App: React.FC = () => {
     const [drawingPoints, setDrawingPoints] = useState<Point[]>([]);
     const [renamingLayerId, setRenamingLayerId] = useState<string | null>(null);
     
-    const [audioLevels, setAudioLevels] = useState({ bass: 0, mids: 0, highs: 0 });
+    const [audioLevels, setAudioLevels] = useState<AudioLevels>({ bass: 0, mids: 0, highs: 0 });
     const audioContextRef = useRef<AudioContext | null>(null);
     const analyserRef = useRef<AnalyserNode | null>(null);
-    // FIX: Explicitly initialize useRef with null to satisfy a potentially strict linting rule about providing arguments to useRef.
     const animationFrameRef = useRef<number | null>(null);
 
     const setupAudio = async () => {
         if (audioContextRef.current) return;
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            // FIX: Add a type assertion to `window` to allow usage of the prefixed `webkitAudioContext` for broader browser compatibility without causing a TypeScript error.
             const context = new (window.AudioContext || (window as any).webkitAudioContext)();
             const source = context.createMediaStreamSource(stream);
             const analyser = context.createAnalyser();
@@ -444,7 +442,9 @@ const App: React.FC = () => {
                          shapes={shapes} 
                          layers={layers}
                          liveStreams={liveStreams} 
-                         effects={effects} 
+                         effects={effects}
+                         audioLevels={audioLevels}
+                         analyserRef={analyserRef}
                          updateShapePoints={updateShapePoints} 
                          selectedShapeId={selectedShape?.id || null} 
                          selectedLayerColor={selectedLayer?.color}

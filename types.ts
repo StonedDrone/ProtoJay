@@ -68,3 +68,10 @@ export interface LiveStream {
     name: string;
     stream: MediaStream;
 }
+
+// Added for audio reactivity in Canvas
+export interface AudioLevels {
+    bass: number;
+    mids: number;
+    highs: number;
+}
