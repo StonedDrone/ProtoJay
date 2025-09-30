@@ -1,5 +1,5 @@
 {
-  "name": "Aura Pro - Projection Mapping Engine",
-  "description": "A web-based simulation of a professional-grade projection mapping engine inspired by HeavyM. This application provides a feature-rich interface for real-time visual performance, including surface warping, a generative visual engine, audio reactivity, and live performance controls, all designed with a balance of beginner-friendliness and professional depth.",
+  "name": "Proto-Jay",
+  "description": "Proto-Jay is a web-based simulation of a professional-grade projection mapping engine inspired by HeavyM. This application provides a feature-rich interface for real-time visual performance, including surface warping, a generative visual engine, audio reactivity, and live performance controls, all designed with a balance of beginner-friendliness and professional depth.",
   "requestFramePermissions": []
 }
