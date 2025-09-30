@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useCallback, CSSProperties } from 'react';
 import { type Shape, type Point, type GlobalEffects, type Layer } from '../types';
 
@@ -6,8 +5,9 @@ interface CanvasProps {
     shapes: Shape[];
     layers: Layer[];
     effects: GlobalEffects;
-    updateShape: (id: string, newPoints: Point[]) => void;
+    updateShapePoints: (id: string, newPoints: Point[]) => void;
     selectedShapeId: string | null;
+    selectedLayerColor?: string;
 }
 
 type DragState = {
@@ -47,8 +47,18 @@ const VisualDefs: React.FC = () => (
     </defs>
 );
 
+const getBoundingBox = (points: Point[]) => {
+    if (points.length === 0) return { x: 0, y: 0, width: 0, height: 0 };
+    const x = points.map(p => p.x);
+    const y = points.map(p => p.y);
+    const minX = Math.min(...x);
+    const minY = Math.min(...y);
+    const maxX = Math.max(...x);
+    const maxY = Math.max(...y);
+    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+};
 
-const Canvas: React.FC<CanvasProps> = ({ shapes, layers, effects, updateShape, selectedShapeId }) => {
+const Canvas: React.FC<CanvasProps> = ({ shapes, layers, effects, updateShapePoints, selectedShapeId, selectedLayerColor = '#4f46e5' }) => {
     const svgRef = useRef<SVGSVGElement>(null);
     const [dragState, setDragState] = useState<DragState>(null);
 
@@ -64,11 +74,12 @@ const Canvas: React.FC<CanvasProps> = ({ shapes, layers, effects, updateShape, s
 
     const handleMouseDown = useCallback((e: React.MouseEvent, shapeId: string, pointIndex?: number) => {
         const mousePos = getMousePosition(e);
+        const shape = shapes.find(s => s.id === shapeId);
+        if (!shape) return;
+
         if (pointIndex !== undefined) {
             setDragState({ type: 'point', shapeId, pointIndex, offset: { x: 0, y: 0 } });
         } else {
-            const shape = shapes.find(s => s.id === shapeId);
-            if (!shape) return;
             const avgX = shape.points.reduce((sum, p) => sum + p.x, 0) / shape.points.length;
             const avgY = shape.points.reduce((sum, p) => sum + p.y, 0) / shape.points.length;
             setDragState({ type: 'shape', shapeId, offset: { x: mousePos.x - avgX, y: mousePos.y - avgY } });
@@ -85,7 +96,15 @@ const Canvas: React.FC<CanvasProps> = ({ shapes, layers, effects, updateShape, s
         let newPoints = [...originalShape.points.map(p => ({...p}))];
 
         if (type === 'point' && pointIndex !== undefined) {
-            newPoints[pointIndex] = mousePos;
+            if (originalShape.type === 'rect') {
+                const otherIndex = pointIndex === 0 ? 1 : 0;
+                newPoints[pointIndex] = mousePos;
+                // Maintain rectangle structure if needed, but simple corner drag is fine
+            } else if (originalShape.type === 'circle') {
+                newPoints[pointIndex] = mousePos;
+            } else {
+                newPoints[pointIndex] = mousePos;
+            }
         } else if (type === 'shape') {
             const avgX = originalShape.points.reduce((sum, p) => sum + p.x, 0) / originalShape.points.length;
             const avgY = originalShape.points.reduce((sum, p) => sum + p.y, 0) / originalShape.points.length;
@@ -94,8 +113,8 @@ const Canvas: React.FC<CanvasProps> = ({ shapes, layers, effects, updateShape, s
             newPoints = originalShape.points.map(p => ({ x: p.x + dx, y: p.y + dy }));
         }
         
-        updateShape(shapeId, newPoints);
-    }, [dragState, shapes, updateShape]);
+        updateShapePoints(shapeId, newPoints);
+    }, [dragState, shapes, updateShapePoints]);
 
     const handleMouseUp = useCallback(() => {
         setDragState(null);
@@ -119,39 +138,92 @@ const Canvas: React.FC<CanvasProps> = ({ shapes, layers, effects, updateShape, s
         >
             <svg ref={svgRef} style={canvasStyle}>
                 <VisualDefs/>
+                <defs>
+                    {shapes.map(shape => {
+                         const clipPathId = `clip-${shape.id}`;
+                         if (shape.type === 'polygon') {
+                            const pointsString = shape.points.map(p => `${p.x},${p.y}`).join(' ');
+                            return <clipPath key={clipPathId} id={clipPathId}><polygon points={pointsString} /></clipPath>
+                         }
+                         if (shape.type === 'rect') {
+                             const [p1, p2] = shape.points;
+                             const x = Math.min(p1.x, p2.x);
+                             const y = Math.min(p1.y, p2.y);
+                             const width = Math.abs(p1.x - p2.x);
+                             const height = Math.abs(p1.y - p2.y);
+                             return <clipPath key={clipPathId} id={clipPathId}><rect x={x} y={y} width={width} height={height}/></clipPath>
+                         }
+                         if (shape.type === 'circle') {
+                             const [center, edge] = shape.points;
+                             const r = Math.hypot(edge.x - center.x, edge.y - center.y);
+                             return <clipPath key={clipPathId} id={clipPathId}><circle cx={center.x} cy={center.y} r={r}/></clipPath>
+                         }
+                         return null;
+                    })}
+                </defs>
+
                 {shapes.map(shape => {
                     const layer = layers.find(l => l.shapeId === shape.id);
                     if (!layer || !layer.visible) return null;
                     
-                    const pointsString = shape.points.map(p => `${p.x},${p.y}`).join(' ');
+                    const clipPathId = `clip-${shape.id}`;
                     const fill = shape.visual.startsWith('gradient') ? `url(#${shape.visual})`
                                : shape.visual === 'dots' || shape.visual === 'grid' ? `url(#${shape.visual})`
                                : `#fff`;
+
+                    let shapeElement: React.ReactNode = null;
+                    let handles: Point[] = [];
+                    
+                    if (shape.type === 'polygon') {
+                        const pointsString = shape.points.map(p => `${p.x},${p.y}`).join(' ');
+                        shapeElement = <polygon points={pointsString} fill={fill} onMouseDown={(e) => handleMouseDown(e, shape.id)} className="cursor-move"/>;
+                        handles = shape.points;
+                    } else if (shape.type === 'rect') {
+                        const [p1, p2] = shape.points;
+                        const x = Math.min(p1.x, p2.x);
+                        const y = Math.min(p1.y, p2.y);
+                        const width = Math.abs(p1.x - p2.x);
+                        const height = Math.abs(p1.y - p2.y);
+                        shapeElement = <rect x={x} y={y} width={width} height={height} fill={fill} onMouseDown={(e) => handleMouseDown(e, shape.id)} className="cursor-move"/>
+                        handles = [{x,y}, {x:x+width,y}, {x:x+width,y:y+height}, {x,y:y+height}];
+                    } else if (shape.type === 'circle') {
+                        const [center, edge] = shape.points;
+                        const r = Math.hypot(edge.x - center.x, edge.y - center.y);
+                        shapeElement = <circle cx={center.x} cy={center.y} r={r} fill={fill} onMouseDown={(e) => handleMouseDown(e, shape.id)} className="cursor-move"/>;
+                        handles = [center, edge];
+                    }
                     
                     return (
                         <g key={shape.id} opacity={layer.opacity} style={{ mixBlendMode: layer.blendMode as any}}>
-                            <polygon
-                                points={pointsString}
-                                fill={fill}
-                                onMouseDown={(e) => handleMouseDown(e, shape.id)}
-                                className="cursor-move"
-                            />
-                            {(shape.visual === 'fractal' || shape.visual === 'particles') && (
-                                <use href={`#${shape.visual}`} clipPath={`polygon(${pointsString})`} />
+                            {shape.visual === 'media' && shape.mediaUrl ? (
+                                <g clipPath={`url(#${clipPathId})`}>
+                                    <image href={shape.mediaUrl} x="0" y="0" width="100%" height="100%" preserveAspectRatio="xMidYMid slice" onMouseDown={(e) => handleMouseDown(e, shape.id)} className="cursor-move" />
+                                </g>
+                            ) : (
+                                <>
+                                    {shapeElement}
+                                    {(shape.visual === 'fractal' || shape.visual === 'particles') && (
+                                        <use href={`#${shape.visual}`} clipPath={`url(#${clipPathId})`} />
+                                    )}
+                                </>
                             )}
-                            {selectedShapeId === shape.id && shape.points.map((p, i) => (
+
+                            {selectedShapeId === shape.id && handles.map((p, i) => {
+                                const handleIndex = shape.type === 'rect' ? (i === 0 || i === 2) ? 0 : 1 : i;
+                                const originalPoint = shape.points[handleIndex];
+                                return (
                                 <circle
                                     key={i}
                                     cx={p.x}
                                     cy={p.y}
                                     r="6"
                                     fill="rgba(255, 255, 255, 0.9)"
-                                    stroke="#4f46e5"
+                                    stroke={selectedLayerColor}
                                     strokeWidth="2"
                                     className="cursor-grab active:cursor-grabbing"
-                                    onMouseDown={(e) => { e.stopPropagation(); handleMouseDown(e, shape.id, i); }}
+                                    onMouseDown={(e) => { e.stopPropagation(); handleMouseDown(e, shape.id, handleIndex); }}
                                 />
-                            ))}
+                            )})}
                         </g>
                     );
                 })}

@@ -1,10 +1,10 @@
-
 export interface Point {
   x: number;
   y: number;
 }
 
-export type VisualType = 'dots' | 'grid' | 'gradient-purple' | 'gradient-blue' | 'fractal' | 'particles';
+export type VisualType = 'dots' | 'grid' | 'gradient-purple' | 'gradient-blue' | 'fractal' | 'particles' | 'media';
+export type ShapeType = 'polygon' | 'rect' | 'circle';
 
 export const blendModes = [
   'normal', 'multiply', 'screen', 'overlay', 'darken', 'lighten', 
@@ -16,17 +16,20 @@ export type BlendMode = typeof blendModes[number];
 
 export interface Shape {
   id: string;
+  type: ShapeType;
   points: Point[];
   visual: VisualType;
+  mediaUrl?: string;
 }
 
 export interface Layer {
-    id: string;
+    id:string;
     shapeId: string;
     name: string;
     opacity: number;
     blendMode: BlendMode;
     visible: boolean;
+    color: string;
 }
 
 export interface GlobalEffects {
@@ -43,4 +46,11 @@ export interface Scene {
     shapes: Shape[];
     layers: Layer[];
     effects: GlobalEffects;
+}
+
+export interface MediaItem {
+    id: string;
+    name: string;
+    url: string;
+    type: 'image' | 'video';
 }
