@@ -24,11 +24,14 @@ export interface Shape {
   type: ShapeType;
   points: Point[];
   visual: VisualType;
+  visualOptions?: { [key: string]: number };
   mediaUrl?: string;
   liveStreamId?: string;
   rotation?: number;
   scale?: number;
 }
+
+export type OpacityMode = 'static' | 'pulse' | 'audio-bass' | 'audio-mids' | 'audio-highs';
 
 export interface Layer {
     id:string;
@@ -38,6 +41,13 @@ export interface Layer {
     blendMode: BlendMode;
     visible: boolean;
     color: string;
+    opacityMode?: OpacityMode;
+    opacityParams?: {
+        speed?: number;
+        min?: number;
+        max?: number;
+        sensitivity?: number;
+    };
 }
 
 export interface GlobalEffects {
@@ -69,7 +79,6 @@ export interface LiveStream {
     stream: MediaStream;
 }
 
-// Added for audio reactivity in Canvas
 export interface AudioLevels {
     bass: number;
     mids: number;

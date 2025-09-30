@@ -1,12 +1,14 @@
 import React, { useState, useRef, useCallback, CSSProperties, useEffect } from 'react';
 import { type Shape, type Point, type GlobalEffects, type Layer, VisualType, LiveStream, AudioLevels } from '../types';
+import { VISUAL_OPTIONS_CONFIG } from '../constants';
 
 interface CanvasProps {
     shapes: Shape[];
     layers: Layer[];
     liveStreams: LiveStream[];
     effects: GlobalEffects;
-    updateShapePoints: (id: string, newPoints: Point[]) => void;
+    updateShapePoints: (id: string, newPoints: Point[], commit: boolean) => void;
+    onInteractionEnd: () => void;
     selectedShapeId: string | null;
     selectedLayerColor?: string;
     isDrawing: boolean;
@@ -48,7 +50,6 @@ const SpectrumVisual: React.FC<{ analyserNode: AnalyserNode | null }> = ({ analy
                 }
                 ref.current.innerHTML = bars;
             }
-            // Fix: Re-schedule the next frame at the end of the function.
             frameRef.current = requestAnimationFrame(draw);
         };
 
@@ -86,7 +87,6 @@ const WaveformVisual: React.FC<{ analyserNode: AnalyserNode | null }> = ({ analy
                 }
                 ref.current.setAttribute('d', d);
             }
-            // Fix: Re-schedule the next frame at the end of the function.
             frameRef.current = requestAnimationFrame(draw);
         };
         frameRef.current = requestAnimationFrame(draw);
@@ -99,77 +99,106 @@ const WaveformVisual: React.FC<{ analyserNode: AnalyserNode | null }> = ({ analy
 };
 
 
-const VisualDefs: React.FC<{ audioLevels: AudioLevels }> = React.memo(({ audioLevels }) => {
-    const madNoiseTurbulenceRef = useRef<SVGFETurbulenceElement>(null);
-    const dunesTurbulenceRef = useRef<SVGFETurbulenceElement>(null);
-    const cloudsTurbulenceRef = useRef<SVGFETurbulenceElement>(null);
-    const causticsDisplacementRef = useRef<SVGFEDisplacementMapElement>(null);
-    const causticsTurbulenceRef = useRef<SVGFETurbulenceElement>(null);
-    const fractalTurbulenceRef = useRef<SVGFETurbulenceElement>(null);
-    const particlesTurbulenceRef = useRef<SVGFETurbulenceElement>(null);
+const VisualDefinitions: React.FC<{ shapes: Shape[], audioLevels: AudioLevels }> = React.memo(({ shapes, audioLevels }) => {
     const strobRectRef = useRef<SVGRectElement>(null);
-
     const animationFrameRef = useRef<number>();
+
+    const getOpt = (visual: VisualType, option: string, options?: { [key: string]: number }) => {
+        return options?.[option] ?? VISUAL_OPTIONS_CONFIG[visual]?.[option]?.defaultValue ?? 0;
+    };
 
     useEffect(() => {
         const animate = (time: number) => {
             const { bass, mids, highs } = audioLevels;
 
-            if (madNoiseTurbulenceRef.current) {
-                const baseFreq = 0.02 + (bass / 100) * 0.1;
-                madNoiseTurbulenceRef.current.setAttribute('baseFrequency', `${baseFreq}`);
-                madNoiseTurbulenceRef.current.setAttribute('seed', `${time / 100}`);
-            }
-            if (dunesTurbulenceRef.current) {
-                const baseFreqY = 0.1 + (mids / 100) * 0.4;
-                dunesTurbulenceRef.current.setAttribute('baseFrequency', `0.02 ${baseFreqY}`);
-            }
-            if (cloudsTurbulenceRef.current) {
-                const baseFreq = 0.02 + (mids / 100) * 0.03;
-                cloudsTurbulenceRef.current.setAttribute('baseFrequency', `${baseFreq}`);
-                cloudsTurbulenceRef.current.setAttribute('seed', `${time / 300}`);
-            }
-            if (causticsDisplacementRef.current) {
-                const scale = 5 + (highs / 100) * 25;
-                causticsDisplacementRef.current.setAttribute('scale', `${scale}`);
-            }
-            if (causticsTurbulenceRef.current) {
-                causticsTurbulenceRef.current.setAttribute('seed', `${time / 200}`);
-            }
-            if (fractalTurbulenceRef.current) {
-                fractalTurbulenceRef.current.setAttribute('seed', `${time / 500}`);
-            }
-            if (particlesTurbulenceRef.current) {
-                const baseFreq = 0.5 + (bass / 100) * 1.5;
-                particlesTurbulenceRef.current.setAttribute('baseFrequency', `${baseFreq}`);
-                particlesTurbulenceRef.current.setAttribute('seed', `${time / 50}`);
-            }
+            shapes.forEach(shape => {
+                const id = `visual-def-${shape.id}`;
+                switch (shape.visual) {
+                    case 'dunes': {
+                        const el = document.getElementById(`${id}-turbulence`);
+                        if (el) {
+                            const freqX = getOpt('dunes', 'frequencyX', shape.visualOptions);
+                            const freqY = getOpt('dunes', 'frequencyY', shape.visualOptions);
+                            const baseFreqY = freqY + (mids / 100) * 0.4;
+                            el.setAttribute('baseFrequency', `${freqX} ${baseFreqY}`);
+                        }
+                        break;
+                    }
+                    case 'mad-noise': {
+                        const turbEl = document.getElementById(`${id}-turbulence`);
+                        if (turbEl) {
+                            const freq = getOpt('mad-noise', 'frequency', shape.visualOptions);
+                            const baseFreq = freq + (bass / 100) * 0.1;
+                            turbEl.setAttribute('baseFrequency', `${baseFreq}`);
+                            turbEl.setAttribute('seed', `${time / 100}`);
+                        }
+                        break;
+                    }
+                    case 'clouds': {
+                        const el = document.getElementById(`${id}-turbulence`);
+                         if (el) {
+                            const freq = getOpt('clouds', 'frequency', shape.visualOptions);
+                            const baseFreq = freq + (mids / 100) * 0.03;
+                            el.setAttribute('baseFrequency', `${baseFreq}`);
+                            el.setAttribute('seed', `${time / 300}`);
+                        }
+                        break;
+                    }
+                    case 'caustics': {
+                        const dispEl = document.getElementById(`${id}-displacement`);
+                        if (dispEl) {
+                            const scale = getOpt('caustics', 'scale', shape.visualOptions);
+                            const newScale = scale + (highs / 100) * 25;
+                            dispEl.setAttribute('scale', `${newScale}`);
+                        }
+                        const turbEl = document.getElementById(`${id}-turbulence`);
+                        if (turbEl) {
+                            turbEl.setAttribute('seed', `${time / 200}`);
+                        }
+                        break;
+                    }
+                    case 'fractal': {
+                        const el = document.getElementById(`${id}-turbulence`);
+                        if (el) el.setAttribute('seed', `${time / 500}`);
+                        break;
+                    }
+                    case 'particles': {
+                        const el = document.getElementById(`${id}-turbulence`);
+                        if (el) {
+                            const freq = getOpt('particles', 'frequency', shape.visualOptions);
+                            const baseFreq = freq + (bass / 100) * 1.5;
+                            el.setAttribute('baseFrequency', `${baseFreq}`);
+                            el.setAttribute('seed', `${time / 50}`);
+                        }
+                        break;
+                    }
+                }
+            });
+
             if (strobRectRef.current) {
                 strobRectRef.current.style.opacity = bass > 65 ? '1' : '0';
             }
-            // Fix: Re-schedule the next frame at the end of the function.
             animationFrameRef.current = requestAnimationFrame(animate);
         };
         animationFrameRef.current = requestAnimationFrame(animate);
         return () => {
             if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
         };
-    }, [audioLevels]);
+    }, [shapes, audioLevels]);
 
     return (
     <defs>
-        {/* Gradients */}
+        {/* Static Gradients */}
         <radialGradient id="gradient-purple"><stop offset="0%" stopColor="#c084fc" /><stop offset="100%" stopColor="#6d28d9" /></radialGradient>
         <radialGradient id="gradient-blue"><stop offset="0%" stopColor="#7dd3fc" /><stop offset="100%" stopColor="#0369a1" /></radialGradient>
         <linearGradient id="gradient-color" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#00F" /><stop offset="50%" stopColor="#F0F" /><stop offset="100%" stopColor="#F00" /></linearGradient>
         <radialGradient id="sphere"><stop offset="10%" stopColor="#fff" /><stop offset="100%" stopColor="#000" /></radialGradient>
         <linearGradient id="siren" gradientTransform="rotate(45)"><stop offset="0%" stopColor="#fff" /><stop offset="100%" stopColor="#000" /></linearGradient>
 
-        {/* Patterns */}
+        {/* Static Patterns */}
         <pattern id="shapes" patternUnits="userSpaceOnUse" width="40" height="40">
             <rect width="15" height="15" x="0" y="0" fill="#fff" /><rect width="10" height="10" x="20" y="15" fill="#aaa" /><rect width="5" height="5" x="5" y="25" fill="#ccc" />
         </pattern>
-        <pattern id="line-patterns" patternUnits="userSpaceOnUse" width="10" height="10"><path d="M 5 0 L 5 10" stroke="#fff" strokeWidth="2"/></pattern>
         <pattern id="line-repeat" patternUnits="userSpaceOnUse" width="40" height="20">
             <rect x="0" y="0" width="30" height="5" fill="#fff" /><rect x="10" y="10" width="30" height="5" fill="#fff" />
         </pattern>
@@ -186,21 +215,36 @@ const VisualDefs: React.FC<{ audioLevels: AudioLevels }> = React.memo(({ audioLe
         <pattern id="square-wave" patternUnits="userSpaceOnUse" width="20" height="20"><path d="M 0,10 L 5,10 5,0 10,0 10,10 15,10 15,0 20,0" fill="none" stroke="#fff" strokeWidth="2" /></pattern>
         <pattern id="cubic-circles" patternUnits="userSpaceOnUse" width="20" height="20"><circle cx="10" cy="10" r="8" stroke="#fff" strokeWidth="2" fill="none"/></pattern>
         <pattern id="diagonals" patternUnits="userSpaceOnUse" width="10" height="10"><path d="M-1,1 l2,-2 M0,10 l10,-10 M9,11 l2,-2" stroke="#fff" strokeWidth="0.5"/><path d="M-1,9 l2,2 M0,0 l10,10 M9,-1 l2,2" stroke="#fff" strokeWidth="0.5"/></pattern>
-        <pattern id="dots" patternUnits="userSpaceOnUse" width="10" height="10"><circle cx="2" cy="2" r="1" fill="#a78bfa" /></pattern>
-        <pattern id="grid" patternUnits="userSpaceOnUse" width="20" height="20"><path d="M 20 0 L 0 0 0 20" fill="none" stroke="#6366f1" strokeWidth="0.5"/></pattern>
         
-        {/* Audio-Reactive Filters & Elements */}
+        {/* Static Filters */}
+        <filter id="random-filter"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="1" seed="1" stitchTiles="stitch" /></filter>
+        
+        {/* Global animated elements */}
         <g id="strob">
             <rect width="100%" height="100%" fill="black" />
             <rect ref={strobRectRef} width="100%" height="100%" fill="white" style={{transition: 'opacity 50ms linear'}} />
         </g>
-        <filter id="mad-noise-filter"><feTurbulence ref={madNoiseTurbulenceRef} type="turbulence" baseFrequency="0.02" numOctaves="1" /><feDisplacementMap in="SourceGraphic" scale="20" /></filter>
-        <filter id="dunes-filter"><feTurbulence ref={dunesTurbulenceRef} type="fractalNoise" baseFrequency="0.02 0.2" numOctaves="2" /><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="linear" slope="2" intercept="-0.5"/></feComponentTransfer></filter>
-        <filter id="clouds-filter"><feTurbulence ref={cloudsTurbulenceRef} type="fractalNoise" baseFrequency="0.03" numOctaves="4" /><feColorMatrix type="saturate" values="0" /><feComponentTransfer><feFuncA type="linear" slope="1.5" intercept="-0.2"/></feComponentTransfer></filter>
-        <filter id="random-filter"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="1" seed="1" stitchTiles="stitch" /></filter>
-        <filter id="caustics-filter"><feTurbulence ref={causticsTurbulenceRef} type="fractalNoise" baseFrequency="0.05" numOctaves="3" result="noise" /><feDisplacementMap ref={causticsDisplacementRef} in="SourceGraphic" in2="noise" scale="15" /></filter>
-        <filter id="fractal-filter"><feTurbulence ref={fractalTurbulenceRef} type="fractalNoise" baseFrequency="0.04" numOctaves="4" stitchTiles="stitch" /><feColorMatrix type="matrix" values="0 0 0 0 0.5, 0 0 0 0 0.5, 0 0 0 0 1, 0 0 0 1 0" /></filter>
-        <filter id="particles-filter"><feTurbulence ref={particlesTurbulenceRef} type="fractalNoise" baseFrequency="0.9" numOctaves="1" result="turbulence" /><feComposite operator="in" in="turbulence" in2="SourceAlpha" result="composite"/><feColorMatrix in="composite" type="matrix" values="1 0 0 0 0, 0 1 0 0 0, 0 0 1 0 0, 0 0 0 -2 1"/></filter>
+        
+        {/* Dynamic, Per-Shape Definitions */}
+        {shapes.map(shape => {
+            const config = VISUAL_OPTIONS_CONFIG[shape.visual];
+            if (!config || !shape.visualOptions) return null;
+            
+            const id = `visual-def-${shape.id}`;
+
+            switch (shape.visual) {
+                case 'dunes': return <filter key={id} id={id}><feTurbulence id={`${id}-turbulence`} type="fractalNoise" baseFrequency={`${getOpt('dunes', 'frequencyX', shape.visualOptions)} ${getOpt('dunes', 'frequencyY', shape.visualOptions)}`} numOctaves={`${getOpt('dunes', 'octaves', shape.visualOptions)}`} /><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="linear" slope="2" intercept="-0.5"/></feComponentTransfer></filter>;
+                case 'clouds': return <filter key={id} id={id}><feTurbulence id={`${id}-turbulence`} type="fractalNoise" baseFrequency={`${getOpt('clouds', 'frequency', shape.visualOptions)}`} numOctaves={`${getOpt('clouds', 'octaves', shape.visualOptions)}`} /><feColorMatrix type="saturate" values="0" /><feComponentTransfer><feFuncA type="linear" slope="1.5" intercept="-0.2"/></feComponentTransfer></filter>;
+                case 'caustics': return <filter key={id} id={id}><feTurbulence id={`${id}-turbulence`} type="fractalNoise" baseFrequency={`${getOpt('caustics', 'frequency', shape.visualOptions)}`} numOctaves={`${getOpt('caustics', 'octaves', shape.visualOptions)}`} result="noise" /><feDisplacementMap id={`${id}-displacement`} in="SourceGraphic" in2="noise" scale={`${getOpt('caustics', 'scale', shape.visualOptions)}`} /></filter>;
+                case 'fractal': return <filter key={id} id={id}><feTurbulence id={`${id}-turbulence`} type="fractalNoise" baseFrequency={`${getOpt('fractal', 'frequency', shape.visualOptions)}`} numOctaves={`${getOpt('fractal', 'octaves', shape.visualOptions)}`} stitchTiles="stitch" /><feColorMatrix type="matrix" values="0 0 0 0 0.5, 0 0 0 0 0.5, 0 0 0 0 1, 0 0 0 1 0" /></filter>;
+                case 'particles': return <filter key={id} id={id}><feTurbulence id={`${id}-turbulence`} type="fractalNoise" baseFrequency={`${getOpt('particles', 'frequency', shape.visualOptions)}`} numOctaves="1" result="turbulence" /><feComposite operator="in" in="turbulence" in2="SourceAlpha" result="composite"/><feColorMatrix in="composite" type="matrix" values="1 0 0 0 0, 0 1 0 0 0, 0 0 1 0 0, 0 0 0 -2 1"/></filter>;
+                case 'mad-noise': return <filter key={id} id={id}><feTurbulence id={`${id}-turbulence`} type="turbulence" baseFrequency={`${getOpt('mad-noise', 'frequency', shape.visualOptions)}`} numOctaves="1" /><feDisplacementMap in="SourceGraphic" scale={`${getOpt('mad-noise', 'scale', shape.visualOptions)}`} /></filter>;
+                case 'grid': return <pattern key={id} id={id} patternUnits="userSpaceOnUse" width={getOpt('grid', 'size', shape.visualOptions)} height={getOpt('grid', 'size', shape.visualOptions)}><path d={`M ${getOpt('grid', 'size', shape.visualOptions)} 0 L 0 0 0 ${getOpt('grid', 'size', shape.visualOptions)}`} fill="none" stroke="#6366f1" strokeWidth={getOpt('grid', 'strokeWidth', shape.visualOptions)}/></pattern>;
+                case 'dots': return <pattern key={id} id={id} patternUnits="userSpaceOnUse" width={getOpt('dots', 'size', shape.visualOptions)} height={getOpt('dots', 'size', shape.visualOptions)}><circle cx="2" cy="2" r={getOpt('dots', 'radius', shape.visualOptions)} fill="#a78bfa" /></pattern>;
+                case 'line-patterns': return <pattern key={id} id={id} patternUnits="userSpaceOnUse" width={getOpt('line-patterns', 'spacing', shape.visualOptions)} height={getOpt('line-patterns', 'spacing', shape.visualOptions)}><path d={`M ${getOpt('line-patterns', 'spacing', shape.visualOptions)/2} 0 L ${getOpt('line-patterns', 'spacing', shape.visualOptions)/2} ${getOpt('line-patterns', 'spacing', shape.visualOptions)}`} stroke="#fff" strokeWidth={getOpt('line-patterns', 'strokeWidth', shape.visualOptions)}/></pattern>;
+                default: return null;
+            }
+        })}
     </defs>
 )});
 
@@ -264,10 +308,50 @@ export const VisualThumbnail: React.FC<{
     )
 }
 
-const Canvas: React.FC<CanvasProps> = ({ shapes, layers, liveStreams, effects, updateShapePoints, selectedShapeId, selectedLayerColor = '#4f46e5', isDrawing, drawingPoints, onCanvasClick, onDrawingFinish, selectedPointIndex, onPointSelect, audioLevels, analyserRef }) => {
+const Canvas: React.FC<CanvasProps> = ({ shapes, layers, liveStreams, effects, updateShapePoints, onInteractionEnd, selectedShapeId, selectedLayerColor = '#4f46e5', isDrawing, drawingPoints, onCanvasClick, onDrawingFinish, selectedPointIndex, onPointSelect, audioLevels, analyserRef }) => {
     const svgRef = useRef<SVGSVGElement>(null);
     const [dragState, setDragState] = useState<DragState>(null);
     const [mousePos, setMousePos] = useState<Point | null>(null);
+    const [dynamicOpacities, setDynamicOpacities] = useState<{[key: string]: number}>({});
+
+    useEffect(() => {
+        let animationFrameId: number;
+        const animate = (time: number) => {
+            const newOpacities: {[key: string]: number} = {};
+            layers.forEach(layer => {
+                const mode = layer.opacityMode || 'static';
+                const params = layer.opacityParams || {};
+                let opacity = layer.opacity;
+
+                switch (mode) {
+                    case 'pulse': {
+                        const speed = params.speed ?? 1;
+                        const min = (params.min ?? 0) / 100;
+                        const max = (params.max ?? 100) / 100;
+                        const pulse = 0.5 * (1 + Math.sin(time * 0.001 * speed));
+                        opacity = min + (max - min) * pulse;
+                        break;
+                    }
+                    case 'audio-bass':
+                    case 'audio-mids':
+                    case 'audio-highs': {
+                        const audioKey = mode.split('-')[1] as keyof AudioLevels;
+                        const level = audioLevels[audioKey] / 100;
+                        const sensitivity = params.sensitivity ?? 1;
+                        const min = (params.min ?? 0) / 100;
+                        const max = (params.max ?? 100) / 100;
+                        opacity = min + (max - min) * Math.min(1, level * sensitivity);
+                        break;
+                    }
+                }
+                newOpacities[layer.id] = opacity;
+            });
+            setDynamicOpacities(newOpacities);
+            animationFrameId = requestAnimationFrame(animate);
+        };
+        animationFrameId = requestAnimationFrame(animate);
+        return () => cancelAnimationFrame(animationFrameId);
+    }, [layers, audioLevels]);
 
     const getMousePosition = (e: React.MouseEvent): Point => {
         if (!svgRef.current) return { x: 0, y: 0 };
@@ -327,12 +411,15 @@ const Canvas: React.FC<CanvasProps> = ({ shapes, layers, liveStreams, effects, u
             newPoints = originalShape.points.map(p => ({ x: p.x + dx, y: p.y + dy }));
         }
         
-        updateShapePoints(shapeId, newPoints);
+        updateShapePoints(shapeId, newPoints, false);
     }, [dragState, shapes, updateShapePoints]);
 
     const handleMouseUp = useCallback(() => {
+        if (dragState) {
+            onInteractionEnd();
+        }
         setDragState(null);
-    }, []);
+    }, [dragState, onInteractionEnd]);
 
     const canvasStyle: CSSProperties = {
         filter: `blur(${effects.blur}px) brightness(${effects.brightness}%) contrast(${effects.contrast}%) hue-rotate(${effects.hueRotate}deg) saturate(${effects.saturate}%)`,
@@ -360,7 +447,7 @@ const Canvas: React.FC<CanvasProps> = ({ shapes, layers, liveStreams, effects, u
             }}
         >
             <svg ref={svgRef} style={canvasStyle} className={isDrawing ? 'cursor-crosshair' : ''}>
-                <VisualDefs audioLevels={audioLevels} />
+                <VisualDefinitions shapes={shapes} audioLevels={audioLevels} />
                 <defs>
                     {shapes.map(shape => {
                          const clipPathId = `clip-${shape.id}`;
@@ -391,18 +478,31 @@ const Canvas: React.FC<CanvasProps> = ({ shapes, layers, liveStreams, effects, u
                     
                     const clipPathId = `clip-${shape.id}`;
                     
-                    const simplePatternFills = ['shapes', 'line-patterns', 'line-repeat', 'square-array', 'bar-code', 'bricks', 'noisy-barcode', 'square-wave', 'cubic-circles', 'diagonals', 'dots', 'grid'];
-                    const gradientFills = ['gradient-purple', 'gradient-blue', 'gradient-color', 'sphere', 'siren'];
-                    const filterEffects = ['mad-noise', 'dunes', 'clouds', 'random', 'caustics', 'fractal', 'particles'];
-                    
+                    const staticPatterns = ['shapes', 'line-repeat', 'square-array', 'bar-code', 'bricks', 'noisy-barcode', 'square-wave', 'cubic-circles', 'diagonals'];
+                    const staticGradients = ['gradient-purple', 'gradient-blue', 'gradient-color', 'sphere', 'siren'];
+                    const staticFilters = ['random'];
+
                     let fill = 'black';
                     let filter = 'none';
                     let useHref = null;
+                    
+                    const isParameterized = !!VISUAL_OPTIONS_CONFIG[shape.visual];
 
-                    if (simplePatternFills.includes(shape.visual)) fill = `url(#${shape.visual})`;
-                    else if (gradientFills.includes(shape.visual)) fill = `url(#${shape.visual})`;
-                    else if (filterEffects.includes(shape.visual)) {
-                        fill = (shape.visual === 'dunes' || shape.visual === 'clouds' || shape.visual === 'fractal' || shape.visual === 'particles') ? 'black' : 'white';
+                    if (isParameterized) {
+                        const visualId = `visual-def-${shape.id}`;
+                        const config = VISUAL_OPTIONS_CONFIG[shape.visual];
+                        if (config && (Object.keys(config).some(k => k.includes('size') || k.includes('spacing')))) {
+                            fill = `url(#${visualId})`;
+                        } else {
+                            fill = (shape.visual === 'dunes' || shape.visual === 'clouds' || shape.visual === 'fractal' || shape.visual === 'particles') ? 'black' : 'white';
+                            filter = `url(#${visualId})`;
+                        }
+                    } else if (staticPatterns.includes(shape.visual)) {
+                        fill = `url(#${shape.visual})`;
+                    } else if (staticGradients.includes(shape.visual)) {
+                        fill = `url(#${shape.visual})`;
+                    } else if (staticFilters.includes(shape.visual)) {
+                        fill = 'white';
                         filter = `url(#${shape.visual}-filter)`;
                     } else if (shape.visual === 'strob') {
                         useHref = `#strob`;
@@ -451,7 +551,7 @@ const Canvas: React.FC<CanvasProps> = ({ shapes, layers, liveStreams, effects, u
                     };
 
                     return (
-                        <g key={shape.id} opacity={layer.opacity} style={{ mixBlendMode: layer.blendMode as any}} transform={transform}>
+                        <g key={shape.id} opacity={dynamicOpacities[layer.id] ?? layer.opacity} style={{ mixBlendMode: layer.blendMode as any}} transform={transform}>
                             <g onMouseDown={(e) => handleMouseDown(e, shape.id)} className="cursor-move">
                                 <g clipPath={`url(#${clipPathId})`}>
                                     {renderContent()}
