@@ -26,6 +26,8 @@ const App: React.FC = () => {
     const [scenes, setScenes] = useState<Scene[]>([]);
     const [mediaLibrary, setMediaLibrary] = useState<MediaItem[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [isDrawing, setIsDrawing] = useState(false);
+    const [drawingPoints, setDrawingPoints] = useState<Point[]>([]);
     
     const [audioLevels, setAudioLevels] = useState({ bass: 50, mids: 30, highs: 70 });
 
@@ -48,7 +50,7 @@ const App: React.FC = () => {
         setShapes(prev => prev.map(s => s.id === id ? { ...s, points: newPoints } : s));
     }, []);
 
-    const addShape = (type: ShapeType) => {
+    const addShape = useCallback((type: ShapeType) => {
         const newShapeId = `shape-${Date.now()}`;
         let newShape: Shape;
 
@@ -77,7 +79,7 @@ const App: React.FC = () => {
         setShapes(prev => [...prev, newShape]);
         setLayers(prev => [...prev, newLayer]);
         setSelectedLayerId(newLayer.id);
-    };
+    }, [layers.length]);
     
     const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -91,7 +93,6 @@ const App: React.FC = () => {
             };
             setMediaLibrary(prev => [...prev, newMediaItem]);
             
-            // Add a shape for the new media
             const newShapeId = `shape-${Date.now()}`;
             const newShape: Shape = { id: newShapeId, type: 'rect', points: [{x: 150, y: 150}, {x: 450, y: 350}], visual: 'media', mediaUrl: url };
             const newLayer: Layer = {
@@ -111,6 +112,13 @@ const App: React.FC = () => {
     
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
+            if (isDrawing) {
+                if (e.key === 'Escape') {
+                    setIsDrawing(false);
+                    setDrawingPoints([]);
+                }
+                return;
+            }
             if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'SELECT') return;
             switch(e.key.toLowerCase()) {
                 case 'r': addShape('rect'); break;
@@ -120,7 +128,44 @@ const App: React.FC = () => {
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [addShape]);
+    }, [addShape, isDrawing]);
+    
+    const completeDrawing = useCallback(() => {
+        if (drawingPoints.length > 2) {
+            const newShapeId = `shape-${Date.now()}`;
+            const newShape: Shape = { id: newShapeId, type: 'polygon', points: drawingPoints, visual: 'grid' };
+            const newLayer: Layer = {
+                id: `layer-${Date.now()}`,
+                shapeId: newShapeId,
+                name: `Custom Polygon`,
+                opacity: 1,
+                blendMode: 'normal',
+                visible: true,
+                color: LAYER_COLORS[layers.length % LAYER_COLORS.length]
+            };
+            setShapes(prev => [...prev, newShape]);
+            setLayers(prev => [...prev, newLayer]);
+            setSelectedLayerId(newLayer.id);
+        }
+        setDrawingPoints([]);
+        setIsDrawing(false);
+    }, [drawingPoints, layers.length]);
+
+    const toggleDrawingMode = () => {
+        if (isDrawing) { // Finish drawing
+            completeDrawing();
+        } else { // Start drawing
+            setIsDrawing(true);
+            setDrawingPoints([]);
+            setSelectedLayerId(null);
+        }
+    };
+
+    const handleCanvasClick = (point: Point) => {
+        if (isDrawing) {
+            setDrawingPoints(prev => [...prev, point]);
+        }
+    };
 
     const updateLayer = (id: string, newProps: Partial<Layer>) => {
         setLayers(prev => prev.map(l => l.id === id ? {...l, ...newProps} : l));
@@ -160,8 +205,6 @@ const App: React.FC = () => {
     const selectedLayer = layers.find(l => l.id === selectedLayerId);
     const selectedShape = shapes.find(s => s.id === selectedLayer?.shapeId);
 
-    // FIX: Widen the type for generative visuals to include optional mediaUrl property.
-    // This ensures all items in `allVisuals` have a consistent shape, preventing type errors.
     const generativeVisuals: { name: string, type: VisualType, mediaUrl?: string }[] = [
         { name: "Purple Haze", type: 'gradient-purple' },
         { name: "Blue Plasma", type: 'gradient-blue' },
@@ -194,10 +237,11 @@ const App: React.FC = () => {
                 
                 <div className="col-span-3 flex flex-col gap-2 overflow-y-auto">
                     <Panel title="Create">
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className="grid grid-cols-4 gap-2">
                            <button onClick={() => addShape('rect')} className="flex flex-col items-center justify-center gap-1 bg-gray-700 hover:bg-indigo-500 rounded p-2 text-sm transition-colors duration-150 text-center"><Icon icon="rectangle" className="w-5 h-5"/>Rect</button>
                            <button onClick={() => addShape('circle')} className="flex flex-col items-center justify-center gap-1 bg-gray-700 hover:bg-indigo-500 rounded p-2 text-sm transition-colors duration-150 text-center"><Icon icon="circle" className="w-5 h-5"/>Circle</button>
-                           <button onClick={() => addShape('polygon')} className="flex flex-col items-center justify-center gap-1 bg-gray-700 hover:bg-indigo-500 rounded p-2 text-sm transition-colors duration-150 text-center"><Icon icon="polygon" className="w-5 h-5"/>Polygon</button>
+                           <button onClick={() => addShape('polygon')} className="flex flex-col items-center justify-center gap-1 bg-gray-700 hover:bg-indigo-500 rounded p-2 text-sm transition-colors duration-150 text-center"><Icon icon="polygon" className="w-5 h-5"/>Poly</button>
+                           <button onClick={toggleDrawingMode} className={`flex flex-col items-center justify-center gap-1 rounded p-2 text-sm transition-colors duration-150 text-center ${isDrawing ? 'bg-indigo-500' : 'bg-gray-700 hover:bg-indigo-500'}`}><Icon icon="line" className="w-5 h-5"/>Line</button>
                         </div>
                     </Panel>
                     <Panel title="Layers" flex>
@@ -227,7 +271,18 @@ const App: React.FC = () => {
 
                 <div className="col-span-6 flex flex-col gap-2 h-full">
                     <Panel title="Projection Output" flex>
-                       <Canvas shapes={shapes} layers={layers} effects={effects} updateShapePoints={updateShapePoints} selectedShapeId={selectedShape?.id || null} selectedLayerColor={selectedLayer?.color} />
+                       <Canvas 
+                         shapes={shapes} 
+                         layers={layers} 
+                         effects={effects} 
+                         updateShapePoints={updateShapePoints} 
+                         selectedShapeId={selectedShape?.id || null} 
+                         selectedLayerColor={selectedLayer?.color}
+                         isDrawing={isDrawing}
+                         drawingPoints={drawingPoints}
+                         onCanvasClick={handleCanvasClick}
+                         onDrawingFinish={completeDrawing}
+                        />
                     </Panel>
                 </div>
 

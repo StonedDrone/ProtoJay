@@ -12,6 +12,7 @@ export const ICONS = {
     polygon: <path strokeLinecap="round" strokeLinejoin="round" d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />,
     rectangle: <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" transform="scale(0.8) translate(3, 3)" /><rect x="7" y="7" width="10" height="10" rx="1" />,
     circle: <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />,
+    line: <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 17.25L10 12l-2.25-4.5 4.5-2.25L18 7.5l-4.125 4.125" />
 };
 
 export const Icon: React.FC<{ icon: keyof typeof ICONS; className?: string }> = ({ icon, className = 'w-6 h-6' }) => (

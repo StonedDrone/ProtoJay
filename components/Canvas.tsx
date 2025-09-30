@@ -8,6 +8,10 @@ interface CanvasProps {
     updateShapePoints: (id: string, newPoints: Point[]) => void;
     selectedShapeId: string | null;
     selectedLayerColor?: string;
+    isDrawing: boolean;
+    drawingPoints: Point[];
+    onCanvasClick: (point: Point) => void;
+    onDrawingFinish: () => void;
 }
 
 type DragState = {
@@ -58,9 +62,10 @@ const getBoundingBox = (points: Point[]) => {
     return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 };
 
-const Canvas: React.FC<CanvasProps> = ({ shapes, layers, effects, updateShapePoints, selectedShapeId, selectedLayerColor = '#4f46e5' }) => {
+const Canvas: React.FC<CanvasProps> = ({ shapes, layers, effects, updateShapePoints, selectedShapeId, selectedLayerColor = '#4f46e5', isDrawing, drawingPoints, onCanvasClick, onDrawingFinish }) => {
     const svgRef = useRef<SVGSVGElement>(null);
     const [dragState, setDragState] = useState<DragState>(null);
+    const [mousePos, setMousePos] = useState<Point | null>(null);
 
     const getMousePosition = (e: React.MouseEvent): Point => {
         if (!svgRef.current) return { x: 0, y: 0 };
@@ -73,6 +78,8 @@ const Canvas: React.FC<CanvasProps> = ({ shapes, layers, effects, updateShapePoi
     };
 
     const handleMouseDown = useCallback((e: React.MouseEvent, shapeId: string, pointIndex?: number) => {
+        if (isDrawing) return;
+        e.stopPropagation();
         const mousePos = getMousePosition(e);
         const shape = shapes.find(s => s.id === shapeId);
         if (!shape) return;
@@ -84,11 +91,12 @@ const Canvas: React.FC<CanvasProps> = ({ shapes, layers, effects, updateShapePoi
             const avgY = shape.points.reduce((sum, p) => sum + p.y, 0) / shape.points.length;
             setDragState({ type: 'shape', shapeId, offset: { x: mousePos.x - avgX, y: mousePos.y - avgY } });
         }
-    }, [shapes]);
+    }, [shapes, isDrawing]);
 
     const handleMouseMove = useCallback((e: React.MouseEvent) => {
+        const currentMousePos = getMousePosition(e);
+        setMousePos(currentMousePos);
         if (!dragState) return;
-        const mousePos = getMousePosition(e);
         const { type, shapeId, pointIndex, offset } = dragState;
         
         const originalShape = shapes.find(s => s.id === shapeId);
@@ -98,18 +106,17 @@ const Canvas: React.FC<CanvasProps> = ({ shapes, layers, effects, updateShapePoi
         if (type === 'point' && pointIndex !== undefined) {
             if (originalShape.type === 'rect') {
                 const otherIndex = pointIndex === 0 ? 1 : 0;
-                newPoints[pointIndex] = mousePos;
-                // Maintain rectangle structure if needed, but simple corner drag is fine
+                newPoints[pointIndex] = currentMousePos;
             } else if (originalShape.type === 'circle') {
-                newPoints[pointIndex] = mousePos;
+                newPoints[pointIndex] = currentMousePos;
             } else {
-                newPoints[pointIndex] = mousePos;
+                newPoints[pointIndex] = currentMousePos;
             }
         } else if (type === 'shape') {
             const avgX = originalShape.points.reduce((sum, p) => sum + p.x, 0) / originalShape.points.length;
             const avgY = originalShape.points.reduce((sum, p) => sum + p.y, 0) / originalShape.points.length;
-            const dx = (mousePos.x - offset.x) - avgX;
-            const dy = (mousePos.y - offset.y) - avgY;
+            const dx = (currentMousePos.x - offset.x) - avgX;
+            const dy = (currentMousePos.y - offset.y) - avgY;
             newPoints = originalShape.points.map(p => ({ x: p.x + dx, y: p.y + dy }));
         }
         
@@ -135,8 +142,19 @@ const Canvas: React.FC<CanvasProps> = ({ shapes, layers, effects, updateShapePoi
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
+            onClick={(e) => {
+                if(isDrawing) {
+                    onCanvasClick(getMousePosition(e));
+                }
+            }}
+            onContextMenu={(e) => {
+                if (isDrawing) {
+                    e.preventDefault();
+                    onDrawingFinish();
+                }
+            }}
         >
-            <svg ref={svgRef} style={canvasStyle}>
+            <svg ref={svgRef} style={canvasStyle} className={isDrawing ? 'cursor-crosshair' : ''}>
                 <VisualDefs/>
                 <defs>
                     {shapes.map(shape => {
@@ -208,7 +226,7 @@ const Canvas: React.FC<CanvasProps> = ({ shapes, layers, effects, updateShapePoi
                                 </>
                             )}
 
-                            {selectedShapeId === shape.id && handles.map((p, i) => {
+                            {selectedShapeId === shape.id && !isDrawing && handles.map((p, i) => {
                                 const handleIndex = shape.type === 'rect' ? (i === 0 || i === 2) ? 0 : 1 : i;
                                 const originalPoint = shape.points[handleIndex];
                                 return (
@@ -227,6 +245,31 @@ const Canvas: React.FC<CanvasProps> = ({ shapes, layers, effects, updateShapePoi
                         </g>
                     );
                 })}
+                {isDrawing && drawingPoints.length > 0 && (
+                    <g style={{ pointerEvents: 'none' }}>
+                        <polyline
+                            points={drawingPoints.map(p => `${p.x},${p.y}`).join(' ')}
+                            fill="none"
+                            stroke={selectedLayerColor}
+                            strokeWidth="2"
+                            strokeDasharray="4 4"
+                        />
+                        {drawingPoints.map((p, i) => (
+                            <circle key={i} cx={p.x} cy={p.y} r="4" fill={selectedLayerColor} />
+                        ))}
+                        {mousePos && (
+                            <line
+                                x1={drawingPoints[drawingPoints.length - 1].x}
+                                y1={drawingPoints[drawingPoints.length - 1].y}
+                                x2={mousePos.x}
+                                y2={mousePos.y}
+                                stroke={selectedLayerColor}
+                                strokeWidth="2"
+                                strokeDasharray="4 4"
+                            />
+                        )}
+                    </g>
+                )}
             </svg>
         </div>
     );
