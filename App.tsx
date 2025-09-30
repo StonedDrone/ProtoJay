@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { type Shape, type Layer, type GlobalEffects, type Scene, type Point, type VisualType, type ShapeType, type MediaItem, blendModes } from './types';
+import { type Shape, type Layer, type GlobalEffects, type Scene, type Point, type VisualType, type ShapeType, type MediaItem, blendModes, type LiveStream } from './types';
 import Header from './components/Header';
 import Canvas, { VisualThumbnail } from './components/Canvas';
 import Panel from './components/Panel';
@@ -18,31 +18,73 @@ const initialLayers: Layer[] = [
 
 const initialEffects: GlobalEffects = { blur: 0, brightness: 100, contrast: 100, hueRotate: 0, saturate: 100 };
 
+const CollapsibleSection: React.FC<{ title: string; children: React.ReactNode; defaultOpen?: boolean }> = ({ title, children, defaultOpen = true }) => {
+    const [isOpen, setIsOpen] = useState(defaultOpen);
+
+    return (
+        <div>
+            <button onClick={() => setIsOpen(!isOpen)} className="w-full text-left flex items-center justify-between py-2 px-1 text-sm font-semibold text-gray-300 hover:bg-gray-700/50 rounded">
+                <span>{title}</span>
+                <Icon icon="chevronDown" className={`w-4 h-4 transition-transform ${isOpen ? '' : '-rotate-90'}`} />
+            </button>
+            {isOpen && <div className="pt-2 pb-1">{children}</div>}
+        </div>
+    );
+};
+
 const MaterialsPanel: React.FC<{
     selectedShape: Shape;
-    onVisualChange: (visualType: VisualType, mediaUrl?: string) => void;
+    onVisualChange: (visualType: VisualType, options?: { mediaUrl?: string, liveStreamId?: string }) => void;
     mediaLibrary: MediaItem[];
-}> = ({ selectedShape, onVisualChange, mediaLibrary }) => {
+    liveStreams: LiveStream[];
+}> = ({ selectedShape, onVisualChange, mediaLibrary, liveStreams }) => {
     return (
         <Panel title="Materials" flex>
-            <div className="grid grid-cols-3 gap-2 h-full overflow-y-auto pr-1">
-                {VISUALS.map(v => (
-                    <VisualThumbnail 
-                        key={v.id} 
-                        visual={v} 
-                        isSelected={selectedShape.visual === v.id}
-                        onClick={() => onVisualChange(v.id)}
-                    />
-                ))}
-                {mediaLibrary.map(m => (
-                    <VisualThumbnail
-                        key={m.id}
-                        visual={{id: 'media', name: m.name}}
-                        mediaUrl={m.url}
-                        isSelected={selectedShape.mediaUrl === m.url}
-                        onClick={() => onVisualChange('media', m.url)}
-                    />
-                ))}
+            <div className="h-full overflow-y-auto pr-1">
+                <CollapsibleSection title="Generative">
+                    <div className="grid grid-cols-3 gap-2">
+                        {VISUALS.map(v => (
+                            <VisualThumbnail 
+                                key={v.id} 
+                                visual={v} 
+                                isSelected={selectedShape.visual === v.id}
+                                onClick={() => onVisualChange(v.id)}
+                            />
+                        ))}
+                    </div>
+                </CollapsibleSection>
+                
+                {mediaLibrary.length > 0 && (
+                    <CollapsibleSection title="Media Library">
+                        <div className="grid grid-cols-3 gap-2">
+                            {mediaLibrary.map(m => (
+                                <VisualThumbnail
+                                    key={m.id}
+                                    visual={{id: 'media', name: m.name}}
+                                    mediaUrl={m.url}
+                                    isSelected={selectedShape.mediaUrl === m.url}
+                                    onClick={() => onVisualChange('media', { mediaUrl: m.url })}
+                                />
+                            ))}
+                        </div>
+                    </CollapsibleSection>
+                )}
+
+                {liveStreams.length > 0 && (
+                     <CollapsibleSection title="Live Inputs">
+                        <div className="grid grid-cols-3 gap-2">
+                            {liveStreams.map(ls => (
+                                <VisualThumbnail
+                                    key={ls.id}
+                                    visual={{id: 'live-input', name: ls.name}}
+                                    stream={ls.stream}
+                                    isSelected={selectedShape.liveStreamId === ls.id}
+                                    onClick={() => onVisualChange('live-input', { liveStreamId: ls.id })}
+                                />
+                            ))}
+                        </div>
+                    </CollapsibleSection>
+                )}
             </div>
         </Panel>
     )
@@ -57,22 +99,61 @@ const App: React.FC = () => {
     const [selectedPointIndex, setSelectedPointIndex] = useState<number | null>(null);
     const [scenes, setScenes] = useState<Scene[]>([]);
     const [mediaLibrary, setMediaLibrary] = useState<MediaItem[]>([]);
+    const [liveStreams, setLiveStreams] = useState<LiveStream[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isDrawing, setIsDrawing] = useState(false);
     const [drawingPoints, setDrawingPoints] = useState<Point[]>([]);
     const [renamingLayerId, setRenamingLayerId] = useState<string | null>(null);
     
-    const [audioLevels, setAudioLevels] = useState({ bass: 50, mids: 30, highs: 70 });
+    const [audioLevels, setAudioLevels] = useState({ bass: 0, mids: 0, highs: 0 });
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const analyserRef = useRef<AnalyserNode | null>(null);
+    // FIX: Explicitly initialize useRef with null to satisfy a potentially strict linting rule about providing arguments to useRef.
+    const animationFrameRef = useRef<number | null>(null);
 
+    const setupAudio = async () => {
+        if (audioContextRef.current) return;
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            // FIX: Add a type assertion to `window` to allow usage of the prefixed `webkitAudioContext` for broader browser compatibility without causing a TypeScript error.
+            const context = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const source = context.createMediaStreamSource(stream);
+            const analyser = context.createAnalyser();
+            analyser.fftSize = 256;
+            source.connect(analyser);
+            
+            audioContextRef.current = context;
+            analyserRef.current = analyser;
+
+            const audioProcessingLoop = () => {
+                if (analyserRef.current) {
+                    const bufferLength = analyserRef.current.frequencyBinCount;
+                    const dataArray = new Uint8Array(bufferLength);
+                    analyserRef.current.getByteFrequencyData(dataArray);
+
+                    const bass = dataArray.slice(0, 5).reduce((a, b) => a + b, 0) / 5 / 255 * 100;
+                    const mids = dataArray.slice(5, 50).reduce((a, b) => a + b, 0) / 45 / 255 * 100;
+                    const highs = dataArray.slice(50, bufferLength).reduce((a, b) => a + b, 0) / (bufferLength - 50) / 255 * 100;
+                    
+                    setAudioLevels({ bass, mids, highs });
+                }
+                animationFrameRef.current = requestAnimationFrame(audioProcessingLoop);
+            };
+            audioProcessingLoop();
+
+        } catch (error) {
+            console.error("Error accessing microphone:", error);
+        }
+    };
+    
     useEffect(() => {
-        const interval = setInterval(() => {
-            setAudioLevels({
-                bass: Math.random() * 100,
-                mids: Math.random() * 100,
-                highs: Math.random() * 100,
-            });
-        }, 200);
-        return () => clearInterval(interval);
+        setupAudio();
+        return () => {
+            if (animationFrameRef.current) {
+                cancelAnimationFrame(animationFrameRef.current);
+            }
+            audioContextRef.current?.close();
+        };
     }, []);
 
     useEffect(() => {
@@ -148,6 +229,21 @@ const App: React.FC = () => {
         }
     };
     
+    const addLiveInput = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            const newLiveStream: LiveStream = {
+                id: `live-${Date.now()}`,
+                name: `Camera ${liveStreams.length + 1}`,
+                stream,
+            };
+            setLiveStreams(prev => [...prev, newLiveStream]);
+        } catch (err) {
+            console.error("Error accessing camera:", err);
+            alert("Could not access camera. Please check permissions.");
+        }
+    };
+
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (isDrawing) {
@@ -245,10 +341,11 @@ const App: React.FC = () => {
     const selectedLayer = layers.find(l => l.id === selectedLayerId);
     const selectedShape = shapes.find(s => s.id === selectedLayer?.shapeId);
 
-    const handleVisualChange = (shapeId: string, visual: VisualType, mediaUrl?: string) => {
+    const handleVisualChange = (shapeId: string, visual: VisualType, options: { mediaUrl?: string, liveStreamId?: string } = {}) => {
         updateShape(shapeId, {
             visual,
-            mediaUrl: visual === 'media' ? mediaUrl : undefined
+            mediaUrl: visual === 'media' ? options.mediaUrl : undefined,
+            liveStreamId: visual === 'live-input' ? options.liveStreamId : undefined,
         });
     };
     
@@ -333,13 +430,20 @@ const App: React.FC = () => {
                             </div>
                         </div>
                     </Panel>
+                    <Panel title="Live Sources">
+                         <button onClick={addLiveInput} className="w-full flex items-center justify-center gap-2 bg-gray-700 hover:bg-indigo-500 rounded p-2 text-sm transition-colors duration-150">
+                            <Icon icon="plus" className="w-4 h-4" />
+                            <span>Add Camera</span>
+                        </button>
+                    </Panel>
                 </div>
 
                 <div className="col-span-6 flex flex-col gap-2 h-full">
                     <Panel title="Projection Output" flex>
                        <Canvas 
                          shapes={shapes} 
-                         layers={layers} 
+                         layers={layers}
+                         liveStreams={liveStreams} 
                          effects={effects} 
                          updateShapePoints={updateShapePoints} 
                          selectedShapeId={selectedShape?.id || null} 
@@ -394,8 +498,9 @@ const App: React.FC = () => {
                          )}
                          <MaterialsPanel 
                             selectedShape={selectedShape}
-                            onVisualChange={(visual, mediaUrl) => handleVisualChange(selectedShape.id, visual, mediaUrl)}
+                            onVisualChange={(visual, options) => handleVisualChange(selectedShape.id, visual, options)}
                             mediaLibrary={mediaLibrary}
+                            liveStreams={liveStreams}
                          />
                         </>
                     )}
@@ -408,9 +513,9 @@ const App: React.FC = () => {
                     </Panel>
                     <Panel title="Audio Reactivity">
                          <div className="flex items-end h-24 gap-2">
-                             <div className="flex-1 bg-gray-700 rounded-t-sm" style={{ height: `${audioLevels.bass}%`, background: 'linear-gradient(to top, #4f46e5, #a5b4fc)' }} />
-                             <div className="flex-1 bg-gray-700 rounded-t-sm" style={{ height: `${audioLevels.mids}%`, background: 'linear-gradient(to top, #0891b2, #67e8f9)' }} />
-                             <div className="flex-1 bg-gray-700 rounded-t-sm" style={{ height: `${audioLevels.highs}%`, background: 'linear-gradient(to top, #db2777, #f9a8d4)' }} />
+                             <div className="flex-1 bg-gray-700 rounded-t-sm transition-all duration-75" style={{ height: `${audioLevels.bass}%`, background: 'linear-gradient(to top, #4f46e5, #a5b4fc)' }} />
+                             <div className="flex-1 bg-gray-700 rounded-t-sm transition-all duration-75" style={{ height: `${audioLevels.mids}%`, background: 'linear-gradient(to top, #0891b2, #67e8f9)' }} />
+                             <div className="flex-1 bg-gray-700 rounded-t-sm transition-all duration-75" style={{ height: `${audioLevels.highs}%`, background: 'linear-gradient(to top, #db2777, #f9a8d4)' }} />
                          </div>
                          <div className="flex justify-between text-xs mt-1 text-gray-400"><span>BASS</span><span>MIDS</span><span>HIGHS</span></div>
                     </Panel>

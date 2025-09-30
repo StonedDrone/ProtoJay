@@ -1,9 +1,10 @@
-import React, { useState, useRef, useCallback, CSSProperties } from 'react';
-import { type Shape, type Point, type GlobalEffects, type Layer, VisualType } from '../types';
+import React, { useState, useRef, useCallback, CSSProperties, useEffect } from 'react';
+import { type Shape, type Point, type GlobalEffects, type Layer, VisualType, LiveStream } from '../types';
 
 interface CanvasProps {
     shapes: Shape[];
     layers: Layer[];
+    liveStreams: LiveStream[];
     effects: GlobalEffects;
     updateShapePoints: (id: string, newPoints: Point[]) => void;
     selectedShapeId: string | null;
@@ -44,7 +45,7 @@ const VisualDefs: React.FC = () => (
             <rect width="5" height="5" x="5" y="25" fill="#ccc" />
         </pattern>
         <pattern id="line-patterns" patternUnits="userSpaceOnUse" width="10" height="10"><path d="M 5 0 L 5 10" stroke="#fff" strokeWidth="2"/></pattern>
-        <filter id="mad-noise-filter"><feTurbulence type="turbulence" baseFrequency="0.02" numOctaves="1" seed="2" /><feDisplacementMap in="SourceGraphic" scale="20" /></filter>
+        <filter id="mad-noise-filter"><feTurbulence type="turbulence" baseFrequency="0.02" numOctaves="1" seed="2"><animate attributeName="seed" from="0" to="100" dur="5s" repeatCount="indefinite" /></feTurbulence><feDisplacementMap in="SourceGraphic" scale="20" /></filter>
         <radialGradient id="sphere"><stop offset="10%" stopColor="#fff" /><stop offset="100%" stopColor="#000" /></radialGradient>
         <pattern id="line-repeat" patternUnits="userSpaceOnUse" width="40" height="20">
             <rect x="0" y="0" width="30" height="5" fill="#fff" />
@@ -55,7 +56,7 @@ const VisualDefs: React.FC = () => (
             <rect x="5" y="5" width="10" height="10" fill="#fff" />
         </pattern>
         <linearGradient id="siren" gradientTransform="rotate(45)"><stop offset="0%" stopColor="#fff" /><stop offset="100%" stopColor="#000" /></linearGradient>
-        <filter id="dunes-filter"><feTurbulence type="fractalNoise" baseFrequency="0.02 0.2" numOctaves="2" seed="5" /><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="linear" slope="2" intercept="-0.5"/></feComponentTransfer></filter>
+        <filter id="dunes-filter"><feTurbulence type="fractalNoise" baseFrequency="0.02 0.2" numOctaves="2"><animate attributeName="seed" from="0" to="100" dur="10s" repeatCount="indefinite" /></feTurbulence><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="linear" slope="2" intercept="-0.5"/></feComponentTransfer></filter>
         <pattern id="bar-code" patternUnits="userSpaceOnUse" width="20" height="100">
             <rect x="0" y="0" width="2" height="100" fill="#fff"/><rect x="3" y="0" width="1" height="100" fill="#fff"/><rect x="6" y="0" width="4" height="100" fill="#fff"/><rect x="12" y="0" width="3" height="100" fill="#fff"/>
         </pattern>
@@ -65,10 +66,10 @@ const VisualDefs: React.FC = () => (
             <rect x="22" y="0" width="18" height="8" fill="#fff" />
             <rect x="0" y="10" width="38" height="8" fill="#fff" transform="translate(10, 0)" />
         </pattern>
-        <filter id="clouds-filter"><feTurbulence type="fractalNoise" baseFrequency="0.03" numOctaves="4" seed="10" /><feColorMatrix type="saturate" values="0" /><feComponentTransfer><feFuncA type="linear" slope="1.5" intercept="-0.2"/></feComponentTransfer></filter>
+        <filter id="clouds-filter"><feTurbulence type="fractalNoise" baseFrequency="0.03" numOctaves="4"><animate attributeName="seed" from="0" to="50" dur="15s" repeatCount="indefinite" /></feTurbulence><feColorMatrix type="saturate" values="0" /><feComponentTransfer><feFuncA type="linear" slope="1.5" intercept="-0.2"/></feComponentTransfer></filter>
         <filter id="random-filter"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="1" seed="1" stitchTiles="stitch" /></filter>
         <pattern id="noisy-barcode" patternUnits="userSpaceOnUse" width="10" height="10"><path d="M -1,1 l 2,-2 M 0,10 l 10,-10 M 9,11 l 2,-2" stroke="#fff" strokeWidth="1"/></pattern>
-        <filter id="caustics-filter"><feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="3" result="noise" seed="20" /><feDisplacementMap in="SourceGraphic" in2="noise" scale="15" /></filter>
+        <filter id="caustics-filter"><feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="3" result="noise"><animate attributeName="seed" from="0" to="20" dur="8s" repeatCount="indefinite" /></feTurbulence><feDisplacementMap in="SourceGraphic" in2="noise" scale="15" /></filter>
         <pattern id="square-wave" patternUnits="userSpaceOnUse" width="20" height="20"><path d="M 0,10 L 5,10 5,0 10,0 10,10 15,10 15,0 20,0" fill="none" stroke="#fff" strokeWidth="2" /></pattern>
         <pattern id="cubic-circles" patternUnits="userSpaceOnUse" width="20" height="20"><circle cx="10" cy="10" r="8" stroke="#fff" strokeWidth="2" fill="none"/></pattern>
         <pattern id="diagonals" patternUnits="userSpaceOnUse" width="10" height="10"><path d="M-1,1 l2,-2 M0,10 l10,-10 M9,11 l2,-2" stroke="#fff" strokeWidth="0.5"/><path d="M-1,9 l2,2 M0,0 l10,10 M9,-1 l2,2" stroke="#fff" strokeWidth="0.5"/></pattern>
@@ -80,23 +81,36 @@ const VisualDefs: React.FC = () => (
         {/* Old patterns/filters */}
         <pattern id="dots" patternUnits="userSpaceOnUse" width="10" height="10"><circle cx="2" cy="2" r="1" fill="#a78bfa" /></pattern>
         <pattern id="grid" patternUnits="userSpaceOnUse" width="20" height="20"><path d="M 20 0 L 0 0 0 20" fill="none" stroke="#6366f1" strokeWidth="0.5"/></pattern>
-        <filter id="fractal-filter"><feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="4" stitchTiles="stitch"/><feColorMatrix type="matrix" values="0 0 0 0 0.5, 0 0 0 0 0.5, 0 0 0 0 1, 0 0 0 1 0" /></filter>
-        <filter id="particles-filter"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="1" result="turbulence"/><feComposite operator="in" in="turbulence" in2="SourceAlpha" result="composite"/><feColorMatrix in="composite" type="matrix" values="1 0 0 0 0, 0 1 0 0 0, 0 0 1 0 0, 0 0 0 -2 1"/></filter>
+        <filter id="fractal-filter"><feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="4" stitchTiles="stitch"><animate attributeName="seed" from="0" to="10" dur="20s" repeatCount="indefinite" /></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.5, 0 0 0 0 0.5, 0 0 0 0 1, 0 0 0 1 0" /></filter>
+        <filter id="particles-filter"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="1" result="turbulence"><animate attributeName="seed" from="0" to="200" dur="3s" repeatCount="indefinite" /></feTurbulence><feComposite operator="in" in="turbulence" in2="SourceAlpha" result="composite"/><feColorMatrix in="composite" type="matrix" values="1 0 0 0 0, 0 1 0 0 0, 0 0 1 0 0, 0 0 0 -2 1"/></filter>
     </defs>
 );
+
+const LiveVideoPlayer: React.FC<{ stream: MediaStream }> = ({ stream }) => {
+    const videoRef = useRef<HTMLVideoElement>(null);
+    useEffect(() => {
+        if (videoRef.current && stream) {
+            videoRef.current.srcObject = stream;
+        }
+    }, [stream]);
+    return <video ref={videoRef} autoPlay muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />;
+};
 
 export const VisualThumbnail: React.FC<{
     visual: {id: VisualType | 'media', name: string},
     isSelected: boolean,
     onClick: () => void,
     mediaUrl?: string
-}> = ({ visual, isSelected, onClick, mediaUrl }) => {
+    stream?: MediaStream
+}> = ({ visual, isSelected, onClick, mediaUrl, stream }) => {
     return (
         <div onClick={onClick} className={`cursor-pointer group flex flex-col items-center gap-1 ${isSelected ? 'text-indigo-400' : ''}`}>
             <div className={`w-full aspect-[4/3] bg-gray-900 rounded-md transition-all duration-150 border-2 ${isSelected ? 'border-indigo-500' : 'border-gray-700 group-hover:border-gray-600'} overflow-hidden`}>
                 <div className="w-full h-full transition-transform duration-300 group-hover:scale-110">
                     {visual.id === 'media' && mediaUrl ? (
                         <img src={mediaUrl} className="w-full h-full object-cover" />
+                    ) : visual.id === 'live-input' && stream ? (
+                        <LiveVideoPlayer stream={stream} />
                     ) : (
                         <svg viewBox="0 0 100 75" className="w-full h-full">
                             <VisualDefs />
@@ -136,7 +150,7 @@ export const VisualThumbnail: React.FC<{
     )
 }
 
-const Canvas: React.FC<CanvasProps> = ({ shapes, layers, effects, updateShapePoints, selectedShapeId, selectedLayerColor = '#4f46e5', isDrawing, drawingPoints, onCanvasClick, onDrawingFinish, selectedPointIndex, onPointSelect }) => {
+const Canvas: React.FC<CanvasProps> = ({ shapes, layers, liveStreams, effects, updateShapePoints, selectedShapeId, selectedLayerColor = '#4f46e5', isDrawing, drawingPoints, onCanvasClick, onDrawingFinish, selectedPointIndex, onPointSelect }) => {
     const svgRef = useRef<SVGSVGElement>(null);
     const [dragState, setDragState] = useState<DragState>(null);
     const [mousePos, setMousePos] = useState<Point | null>(null);
@@ -296,18 +310,32 @@ const Canvas: React.FC<CanvasProps> = ({ shapes, layers, effects, updateShapePoi
                     }
 
                     const transform = `rotate(${shape.rotation || 0} ${centerX} ${centerY}) scale(${shape.scale || 1}) translate(${centerX * (1 - (shape.scale || 1))} ${centerY * (1 - (shape.scale || 1))})`;
+                    
+                    const renderContent = () => {
+                        if (shape.visual === 'media' && shape.mediaUrl) {
+                            return <image href={shape.mediaUrl} x="0" y="0" width="100%" height="100%" preserveAspectRatio="xMidYMid slice" />;
+                        }
+                        if (shape.visual === 'live-input' && shape.liveStreamId) {
+                            const liveStream = liveStreams.find(ls => ls.id === shape.liveStreamId);
+                            if (liveStream) {
+                                return (
+                                    <foreignObject x="0" y="0" width="100%" height="100%">
+                                        <LiveVideoPlayer stream={liveStream.stream} />
+                                    </foreignObject>
+                                );
+                            }
+                        }
+                        if (useHref) {
+                             return <use href={useHref} width="100%" height="100%" />;
+                        }
+                        return <rect x="0" y="0" width="100%" height="100%" fill={fill} filter={filter} />;
+                    };
 
                     return (
                         <g key={shape.id} opacity={layer.opacity} style={{ mixBlendMode: layer.blendMode as any}} transform={transform}>
                             <g onMouseDown={(e) => handleMouseDown(e, shape.id)} className="cursor-move">
                                 <g clipPath={`url(#${clipPathId})`}>
-                                    {shape.visual === 'media' && shape.mediaUrl ? (
-                                        <image href={shape.mediaUrl} x="0" y="0" width="100%" height="100%" preserveAspectRatio="xMidYMid slice" />
-                                    ) : useHref ? (
-                                        <use href={useHref} />
-                                    ) : (
-                                        <rect x="0" y="0" width="100%" height="100%" fill={fill} filter={filter} />
-                                    )}
+                                    {renderContent()}
                                 </g>
                             </g>
                             {selectedShapeId === shape.id && !isDrawing && (shape.type === 'polygon' ? shape.points : shape.type === 'rect' ? [{x: Math.min(shape.points[0].x, shape.points[1].x), y: Math.min(shape.points[0].y, shape.points[1].y)}, {x: Math.max(shape.points[0].x, shape.points[1].x), y: Math.min(shape.points[0].y, shape.points[1].y)}, {x: Math.max(shape.points[0].x, shape.points[1].x), y: Math.max(shape.points[0].y, shape.points[1].y)}, {x: Math.min(shape.points[0].x, shape.points[1].x), y: Math.max(shape.points[0].y, shape.points[1].y)}] : shape.points).map((p, i) => {

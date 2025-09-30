@@ -7,7 +7,7 @@ export type VisualType = 'dots' | 'grid' | 'gradient-purple' | 'gradient-blue' |
   'gradient-color' | 'strob' | 'shapes' | 'line-patterns' | 'mad-noise' | 'sphere' | 'line-repeat' | 
   'square-array' | 'siren' | 'dunes' | 'bar-code' | 'bricks' | 'clouds' | 'random' | 
   'noisy-barcode' | 'caustics' | 'square-wave' | 'cubic-circles' | 'diagonals' | 
-  'spectrum' | 'waveform';
+  'spectrum' | 'waveform' | 'live-input';
 
 export type ShapeType = 'polygon' | 'rect' | 'circle';
 
@@ -25,6 +25,7 @@ export interface Shape {
   points: Point[];
   visual: VisualType;
   mediaUrl?: string;
+  liveStreamId?: string;
   rotation?: number;
   scale?: number;
 }
@@ -60,4 +61,10 @@ export interface MediaItem {
     name: string;
     url: string;
     type: 'image' | 'video';
+}
+
+export interface LiveStream {
+    id: string;
+    name: string;
+    stream: MediaStream;
 }
