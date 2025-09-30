@@ -3,7 +3,12 @@ export interface Point {
   y: number;
 }
 
-export type VisualType = 'dots' | 'grid' | 'gradient-purple' | 'gradient-blue' | 'fractal' | 'particles' | 'media';
+export type VisualType = 'dots' | 'grid' | 'gradient-purple' | 'gradient-blue' | 'fractal' | 'particles' | 'media' |
+  'gradient-color' | 'strob' | 'shapes' | 'line-patterns' | 'mad-noise' | 'sphere' | 'line-repeat' | 
+  'square-array' | 'siren' | 'dunes' | 'bar-code' | 'bricks' | 'clouds' | 'random' | 
+  'noisy-barcode' | 'caustics' | 'square-wave' | 'cubic-circles' | 'diagonals' | 
+  'spectrum' | 'waveform';
+
 export type ShapeType = 'polygon' | 'rect' | 'circle';
 
 export const blendModes = [
@@ -20,6 +25,8 @@ export interface Shape {
   points: Point[];
   visual: VisualType;
   mediaUrl?: string;
+  rotation?: number;
+  scale?: number;
 }
 
 export interface Layer {

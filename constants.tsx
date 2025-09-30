@@ -1,4 +1,5 @@
 import React from 'react';
+import { VisualType } from './types';
 
 export const ICONS = {
     plus: <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />,
@@ -30,4 +31,32 @@ export const LAYER_COLORS = [
     '#ec4899', // pink-500
     '#14b8a6', // teal-500
     '#f97316', // orange-500
+];
+
+export const VISUALS: { id: VisualType; name: string }[] = [
+    { id: 'gradient-color', name: 'Gradient Color' },
+    { id: 'strob', name: 'Strob' },
+    { id: 'shapes', name: 'Shapes' },
+    { id: 'line-patterns', name: 'Line Patterns' },
+    { id: 'mad-noise', name: 'MadNoise' },
+    { id: 'sphere', name: 'Sphere' },
+    { id: 'line-repeat', name: 'LineRepeat' },
+    { id: 'square-array', name: 'SquareArray' },
+    { id: 'siren', name: 'Siren' },
+    { id: 'dunes', name: 'Dunes' },
+    { id: 'bar-code', name: 'Bar Code' },
+    { id: 'bricks', name: 'Bricks' },
+    { id: 'clouds', name: 'Clouds' },
+    { id: 'random', name: 'Random' },
+    { id: 'noisy-barcode', name: 'Noisy Barcode' },
+    { id: 'caustics', name: 'Caustics' },
+    { id: 'square-wave', name: 'SquareWave' },
+    { id: 'cubic-circles', name: 'CubicCircles' },
+    { id: 'diagonals', name: 'Diagonals' },
+    { id: 'spectrum', name: 'Spectrum' },
+    { id: 'waveform', name: 'Waveform' },
+    { id: 'dots', name: 'Dots' },
+    { id: 'grid', name: 'Grid' },
+    { id: 'fractal', name: 'Fractal' },
+    { id: 'particles', name: 'Particles' },
 ];
